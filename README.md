@@ -1,6 +1,6 @@
 # Virtual Camera
 
-A GNOME application for creating and managing PipeWire virtual cameras from windows, monitors, and screen regions.
+A Linux application for creating and managing PipeWire virtual cameras from windows, monitors, and screen regions.
 
 Virtual Camera aims to provide a simple graphical interface for creating virtual camera feeds without requiring `v4l2loopback`, OBS, or manual PipeWire/GStreamer configuration.
 
@@ -16,47 +16,143 @@ Planned functionality includes:
   * Application windows
   * Displays/monitors
   * Screen regions
-* Use the desktop portal for secure source selection
+* Use XDG Desktop Portal for secure source selection
 * Preview camera output before enabling it
 * Start and stop virtual cameras
 * Create and manage multiple virtual cameras
 * Change the source of an existing virtual camera
+* Persistent virtual camera profiles
 * Configure:
 
   * Resolution
   * Frame rate
   * Cursor visibility
   * Scaling behaviour
-* Persistent virtual camera profiles
-* GNOME-native interface using GTK and Libadwaita
 * PipeWire and GStreamer backend
 * No `v4l2loopback` requirement
+* Wayland-first design
+* Multiple frontend support
 
-## Goals
+## Frontends
 
-Virtual Camera is intended to make Linux virtual cameras feel like a normal desktop feature.
+Virtual Camera is designed with a toolkit-independent core so that multiple graphical frontends can share the same backend implementation.
 
-Instead of requiring users to work with PipeWire nodes, GStreamer pipelines, loopback devices, or complex broadcasting software, the application exposes a small set of understandable controls:
+Planned frontends include:
 
-1. Create a virtual camera
-2. Select what to capture
-3. Preview the result
-4. Start the camera
-5. Use it in another application
+### GTK
 
-The application follows the GNOME Human Interface Guidelines and keeps implementation details out of the main interface wherever possible.
+A GTK 4 and Libadwaita frontend designed to integrate naturally with GNOME and follow the GNOME Human Interface Guidelines.
+
+### Qt
+
+A Qt 6 frontend intended to provide a native experience on KDE Plasma and other Qt-based desktop environments.
+
+Both frontends will use the same underlying virtual camera, capture, profile, and pipeline implementation.
+
+## Architecture
+
+Virtual Camera separates multimedia and application logic from the graphical interface.
+
+```text
+VirtualCamera
+├── Core
+│   ├── Virtual camera management
+│   ├── PipeWire integration
+│   ├── GStreamer pipelines
+│   ├── Portal integration
+│   ├── Capture sources
+│   ├── Camera profiles
+│   ├── Configuration
+│   └── Events
+│
+└── Frontends
+    ├── GTK 4 / Libadwaita
+    └── Qt 6
+```
+
+The core must remain independent from GTK, Qt, and other user-interface frameworks.
+
+Frontend-specific concepts such as widgets, dialogs, windows, models, and toolkit signals should remain entirely inside their respective frontend implementations.
+
+## Core
+
+The core is responsible for concepts such as:
+
+```text
+CameraManager
+VirtualCamera
+CaptureSource
+CameraProfile
+Pipeline
+CameraState
+```
+
+Typical operations include:
+
+```text
+create_camera()
+remove_camera()
+start_camera()
+stop_camera()
+update_camera()
+list_cameras()
+request_capture_source()
+```
+
+State changes are exposed through toolkit-independent events which can be adapted by each frontend.
+
+Examples include:
+
+```text
+camera_added
+camera_removed
+camera_state_changed
+source_changed
+preview_changed
+error
+```
 
 ## How It Works
 
-Virtual Camera is planned around the Linux multimedia stack:
+Virtual Camera is built around the modern Linux multimedia stack:
 
 * **PipeWire** — media routing and capture
-* **GStreamer** — processing and virtual camera pipelines
+* **GStreamer** — video processing and pipeline management
 * **XDG Desktop Portal** — secure window and screen selection
-* **GTK 4** — graphical interface
-* **Libadwaita** — GNOME application design and widgets
+* **GTK 4 / Libadwaita** — GNOME frontend
+* **Qt 6** — KDE and Qt frontend
 
-A source selected through the desktop portal is captured through PipeWire, processed as required, and exposed as a virtual camera that compatible applications can use.
+A source is selected through the desktop portal:
+
+```text
+Window / Monitor / Region
+          ↓
+XDG Desktop Portal
+          ↓
+      PipeWire
+          ↓
+      GStreamer
+          ↓
+Virtual Camera Core
+          ↓
+   Virtual Camera
+```
+
+Applications can then use the resulting stream as a normal camera source where supported.
+
+## Preview
+
+Video previews are also kept independent from the graphical toolkit.
+
+The core provides access to the relevant stream or pipeline while each frontend is responsible for displaying it using its own native widgets.
+
+```text
+Core preview stream
+       ├── GTK preview
+       └── Qt preview
+```
+
+This prevents multimedia logic from becoming coupled to either frontend.
 
 ## Virtual Camera Profiles
 
@@ -77,23 +173,65 @@ Presentation
 
 Each camera can be started, stopped, reconfigured, or assigned a different source independently.
 
-## Design Principles
+## Background Service
+
+A future version may optionally expose the core through a D-Bus service.
+
+This would allow virtual cameras to continue running independently of the graphical frontend.
+
+Potential architecture:
+
+```text
+GTK ─┐
+     │
+Qt ──┼── D-Bus ── Virtual Camera Service
+     │
+CLI ─┘
+```
+
+This could eventually provide:
+
+* Persistent cameras when the GUI closes
+* Multiple clients controlling the same cameras
+* Command-line management
+* Desktop integrations
+* Automation support
+
+The initial implementation does not need to depend on this architecture.
+
+## Design Goals
 
 Virtual Camera should remain:
 
 * Simple
-* GNOME-native
+* Desktop-native
 * Secure by default
 * Wayland-friendly
 * PipeWire-native
-* Focused on virtual cameras rather than broadcasting or recording
-* Accessible to users who do not understand Linux multimedia internals
+* Toolkit-independent at its core
+* Easy to use without understanding Linux multimedia internals
+* Focused specifically on virtual cameras
 
-The project is not intended to replace OBS Studio.
+The GTK frontend should follow GNOME conventions and Human Interface Guidelines.
 
-For complex scenes, compositing, streaming, recording, transitions, overlays, and other production workflows, OBS remains the appropriate tool.
+The Qt frontend should integrate naturally with KDE Plasma and Qt-based environments.
 
-Virtual Camera instead focuses on the common case of:
+## Non-Goals
+
+Virtual Camera is not intended to replace OBS Studio.
+
+Complex functionality such as:
+
+* Scene composition
+* Streaming
+* Recording
+* Transitions
+* Overlays
+* Video production workflows
+
+is outside the primary scope of the project.
+
+Virtual Camera instead focuses on the common use case:
 
 > “I want this window or screen to appear as a camera.”
 
@@ -101,7 +239,7 @@ Virtual Camera instead focuses on the common case of:
 
 The project is currently under development.
 
-APIs, behaviour, UI design, and implementation details may change substantially before the first stable release.
+APIs, architecture, behaviour, UI design, and implementation details may change significantly before the first stable release.
 
 ## Contributing
 
@@ -109,7 +247,13 @@ Contributions, bug reports, design feedback, and feature suggestions are welcome
 
 Before implementing major functionality, please open an issue so the proposed approach can be discussed first.
 
-When contributing UI changes, please keep the GNOME Human Interface Guidelines and Libadwaita conventions in mind.
+When contributing:
+
+* Keep core logic independent from frontend frameworks
+* Avoid introducing GTK or Qt dependencies into the core
+* Keep multimedia logic reusable between frontends
+* Follow the conventions of the frontend being modified
+* Prefer simple user-facing abstractions over exposing PipeWire or GStreamer internals
 
 ## License
 
